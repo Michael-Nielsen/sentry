@@ -6,10 +6,89 @@ import {Flex, Box} from 'grid-emotion';
 import Link from 'app/components/link';
 import TextField from 'app/components/forms/textField';
 import SelectField from 'app/components/forms/selectField';
-
+import SelectControl from 'app/components/forms/selectControl';
 import {t} from 'app/locale';
 
-import {CONDITION_OPERATORS} from './data';
+import {getInternal, getExternal, getConditionOptions, isValidCondition} from './utils';
+import {CONDITION_OPERATORS} from '../data';
+
+class Condition extends React.Component {
+  static propTypes = {
+    value: PropTypes.array,
+    onChange: PropTypes.func,
+    columns: PropTypes.array,
+  };
+
+  constructor(props) {
+    super(props);
+    this.state = {
+      options: getConditionOptions(props.columns),
+    };
+  }
+
+  handleChange() {
+    console.log('handle change', arguments);
+  }
+
+  handleClose() {}
+
+  getOptions() {
+    const currentValue = getInternal(this.props.value);
+    return [
+      {label: this.props.value.join(' '), value: currentValue},
+      ...this.state.options.all,
+    ];
+  }
+
+  filterOptions = (options, input, value) => {
+    let optionList = options;
+
+    const external = getExternal(input, this.props.columns);
+
+    const isValid = isValidCondition(external, this.props.columns);
+
+    if (isValid) {
+      optionList = [];
+    } else if (external[0] === null) {
+      optionList = this.state.options.columns;
+    } else if (external[1] === null) {
+      optionList = CONDITION_OPERATORS.map(op => ({
+        value: `${external[0]} ${op}}`,
+        label: `${external[0]} ${op}`,
+      }));
+    }
+
+    return optionList.filter(({label}) => label.includes(input));
+  };
+
+  isValidNewOption = ({label}) => {
+    return isValidCondition(getExternal(label, this.props.columns), this.props.columns);
+  };
+
+  render() {
+    return (
+      <Box w={1}>
+        <SelectControl
+          forwardedRef={ref => (this.select = ref)}
+          value={getInternal(this.props.value)}
+          options={this.getOptions()}
+          filterOptions={this.filterOptions}
+          onChange={this.handleChange}
+          closeOnSelect={true}
+          openOnFocus={true}
+          autoBlur={true}
+          clearable={false}
+          backspaceRemoves={false}
+          deleteRemoves={false}
+          onClose={this.handleClose}
+          creatable={true}
+          promptTextCreator={text => text}
+          isValidNewOption={this.isValidNewOption}
+        />
+      </Box>
+    );
+  }
+}
 
 export default class Conditions extends React.Component {
   static propTypes = {
@@ -127,56 +206,49 @@ export default class Conditions extends React.Component {
   renderCondition(condition, idx) {
     const {columns} = this.props;
 
-    if (this.state.editIndex === idx) {
-      return (
-        <React.Fragment>
-          <Box w={1 / 3} pr={1}>
-            <SelectField
-              name="condition-1"
-              options={columns.map(({name}) => ({
-                value: name,
-                label: name,
-              }))}
-              value={condition[0]}
-              onChange={val => this.updateCondition(0, idx, val)}
-            />
-          </Box>
-          <Box w={1 / 3} pr={1}>
-            <SelectField
-              name="condition-2"
-              options={this.getConditionOperators(condition)}
-              value={condition[1]}
-              onChange={val => this.updateCondition(1, idx, val)}
-            />
-          </Box>
-          <Box w={1 / 3} pr={1}>
-            {this.renderValueField(condition, idx)}
-          </Box>
-          <Box>
-            <Save
-              className="icon-circle-check"
-              onClick={() => this.saveRow(condition, idx)}
-              style={{lineHeight: '37px'}}
-            />
-            <a
-              className="icon-circle-cross"
-              style={{lineHeight: '37px'}}
-              onClick={() => this.removeRow(idx)}
-            />
-          </Box>
-        </React.Fragment>
-      );
-    } else {
-      return (
-        <ConditionLink onClick={() => this.setState({editIndex: idx})}>
-          {condition.join(' ')}
-        </ConditionLink>
-      );
-    }
+    return (
+      <React.Fragment>
+        <Box w={1 / 3} pr={1}>
+          <SelectField
+            name="condition-1"
+            options={columns.map(({name}) => ({
+              value: name,
+              label: name,
+            }))}
+            value={condition[0]}
+            onChange={val => this.updateCondition(0, idx, val)}
+          />
+        </Box>
+        <Box w={1 / 3} pr={1}>
+          <SelectField
+            name="condition-2"
+            options={this.getConditionOperators(condition)}
+            value={condition[1]}
+            onChange={val => this.updateCondition(1, idx, val)}
+          />
+        </Box>
+        <Box w={1 / 3} pr={1}>
+          {this.renderValueField(condition, idx)}
+        </Box>
+        <Box>
+          <Save
+            className="icon-circle-check"
+            onClick={() => this.saveRow(condition, idx)}
+            style={{lineHeight: '37px'}}
+          />
+          <a
+            className="icon-circle-cross"
+            style={{lineHeight: '37px'}}
+            onClick={() => this.removeRow(idx)}
+          />
+        </Box>
+      </React.Fragment>
+    );
   }
 
   render() {
-    const {value} = this.props;
+    const {value, columns} = this.props;
+
     return (
       <div>
         <div>
@@ -187,7 +259,20 @@ export default class Conditions extends React.Component {
         </div>
         {!value.length && 'None, showing all events'}
         {value.map((condition, idx) => (
-          <Flex key={idx}>{this.renderCondition(condition, idx)}</Flex>
+          <Flex key={idx}>
+            <Condition
+              value={condition}
+              onChange={val => this.handleChange(val, idx)}
+              columns={columns}
+            />
+            <Box ml={1}>
+              <a
+                className="icon-circle-cross"
+                style={{lineHeight: '37px'}}
+                onClick={() => this.removeRow(idx)}
+              />
+            </Box>
+          </Flex>
         ))}
       </div>
     );
@@ -201,10 +286,6 @@ const Add = styled.span`
   font-size: 13px;
   line-height: 16px;
   color: ${p => p.theme.gray1};
-`;
-
-const ConditionLink = styled(Link)`
-  margin: 16px 0;
 `;
 
 const Save = styled(Link)`
